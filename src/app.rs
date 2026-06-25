@@ -111,21 +111,22 @@ impl Whiteboard {
     }
 
     pub fn find_element_at(&self, point: Point) -> Option<Id> {
+        let mut group_fallback = None;
         for id in self.order.iter().rev() {
             if let Some(e) = self.elements.get(id) {
-                if matches!(e, Item::Node(_)) && e.contains(point) {
-                    return Some(*id);
+                if e.contains(point) {
+                    match e {
+                        Item::Node(_) => return Some(*id),
+                        Item::Group(_) => {
+                            if group_fallback.is_none() {
+                                group_fallback = Some(*id);
+                            }
+                        }
+                    }
                 }
             }
         }
-        for id in self.order.iter().rev() {
-            if let Some(e) = self.elements.get(id) {
-                if matches!(e, Item::Group(_)) && e.contains(point) {
-                    return Some(*id);
-                }
-            }
-        }
-        None
+        group_fallback
     }
 
     pub fn find_connection_at(&self, point: Point) -> Option<usize> {
@@ -280,7 +281,6 @@ fn editor_update(wb: &mut Whiteboard, message: Message) {
         Message::SelectAndDrag(id, ox, oy) => {
             wb.selected = Some(id);
             wb.selected_connection = None;
-            wb.connection_source = None;
             wb.drag = Some((id, ox, oy));
             if let Some(Item::Node(n)) = wb.elements.get(&id) {
                 wb.edit_content = Some(text_editor::Content::with_text(&n.text));
@@ -306,18 +306,18 @@ fn editor_update(wb: &mut Whiteboard, message: Message) {
                 }
                 let center = wb.elements.get(&id).map(|e| e.center());
                 if let Some(center) = center {
-                    for g_id in wb.order.clone() {
-                        if g_id == id {
+                    for g_id in &wb.order {
+                        if *g_id == id {
                             continue;
                         }
-                        if let Some(Item::Group(g)) = wb.elements.get(&g_id) {
+                        if let Some(Item::Group(g)) = wb.elements.get(g_id) {
                             let g_bounds =
                                 Rectangle::new(Point::new(g.x, g.y), Size::new(g.w, g.h));
                             if g_bounds.contains(center) {
                                 if let Some(Item::Group(grp)) = wb.elements.get_mut(&id) {
-                                    grp.children.retain(|c| *c != g_id);
+                                    grp.children.retain(|c| *c != *g_id);
                                 }
-                                if let Some(Item::Group(grp)) = wb.elements.get_mut(&g_id) {
+                                if let Some(Item::Group(grp)) = wb.elements.get_mut(g_id) {
                                     grp.children.push(id);
                                 }
                                 break;
@@ -342,15 +342,19 @@ fn editor_update(wb: &mut Whiteboard, message: Message) {
             wb.connection_source = None;
         }
         Message::StartConnection(id) => {
-            wb.connection_source = Some(id);
+            if wb.connection_source == Some(id) {
+                wb.connection_source = None;
+            } else {
+                wb.connection_source = Some(id);
+            }
         }
         Message::EndConnection(id) => {
             if let Some(src) = wb.connection_source {
                 if src != id {
                     wb.connections.push(Connection { from: src, to: id });
+                    wb.connection_source = Some(id);
                 }
             }
-            wb.connection_source = None;
         }
         Message::PanStart(pos) => {
             wb.selected_connection = None;
@@ -475,8 +479,7 @@ fn toolbar_view(wb: &Whiteboard) -> Element<'_, Message> {
     row![
         button("+ Node").on_press(Message::NewNode),
         button("+ Group").on_press(Message::NewGroup),
-        text(" | ").size(16),
-        button(if wb.connection_mode { "➜ On" } else { "➜ Connect" })
+        button(if wb.connection_mode { "➜ Exit" } else { "➜ Connect" })
             .on_press(Message::ToggleConnectionMode),
         button("Delete").on_press(Message::DeleteSelected),
         text(" | ").size(16),

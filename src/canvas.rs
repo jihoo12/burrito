@@ -56,15 +56,14 @@ impl Program<Message> for Whiteboard {
 
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), CANVAS_BG);
 
-        for x in (0..(bounds.width as i32)).step_by(40) {
-            for y in (0..(bounds.height as i32)).step_by(40) {
-                frame.fill_rectangle(
-                    Point::new(x as f32, y as f32),
-                    Size::new(1.0, 1.0),
-                    GRID_COLOR,
-                );
+        let grid = Path::new(|b| {
+            for x in (0..(bounds.width as i32)).step_by(40) {
+                for y in (0..(bounds.height as i32)).step_by(40) {
+                    b.rectangle(Point::new(x as f32, y as f32), Size::new(1.0, 1.0));
+                }
             }
-        }
+        });
+        frame.fill(&grid, GRID_COLOR);
 
         frame.translate(Vector::new(self.pan_x, self.pan_y));
         frame.scale(self.zoom);
@@ -85,25 +84,6 @@ impl Program<Message> for Whiteboard {
                     );
                 } else {
                     draw_connection(&mut frame, start, end);
-                }
-            }
-        }
-
-        if self.connection_source.is_some() {
-            if let mouse::Cursor::Available(cursor_pos) = _cursor {
-                let world_pos = Point::new(
-                    (cursor_pos.x - bounds.x - self.pan_x) / self.zoom,
-                    (cursor_pos.y - bounds.y - self.pan_y) / self.zoom,
-                );
-                if let Some(src) = self.elements.get(&self.connection_source.unwrap()) {
-                    let start = src.center();
-                    let dashed = Path::line(start, world_pos);
-                    frame.stroke(
-                        &dashed,
-                        canvas::Stroke::default()
-                            .with_width(1.5)
-                            .with_color(Color::from_rgba(0.3, 0.3, 0.3, 0.6)),
-                    );
                 }
             }
         }
@@ -223,10 +203,8 @@ impl Program<Message> for Whiteboard {
 
                 if self.connection_mode {
                     if let Some(id) = self.find_element_at(world_pos) {
-                        if self.connection_source.is_none() {
+                        if self.connection_source.is_none() || self.connection_source == Some(id) {
                             return Some(canvas::Action::publish(Message::StartConnection(id)));
-                        } else if self.connection_source == Some(id) {
-                            return Some(canvas::Action::publish(Message::ToggleConnectionMode));
                         } else {
                             return Some(canvas::Action::publish(Message::EndConnection(id)));
                         }
