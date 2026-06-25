@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use iced::widget::text_editor;
 use iced::{Color, Point, Rectangle, Size};
+use serde::{Deserialize, Serialize};
 
 pub type Id = u64;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeData {
     pub id: Id,
     pub text: String,
@@ -13,7 +16,7 @@ pub struct NodeData {
     pub h: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupData {
     pub id: Id,
     pub x: f32,
@@ -23,7 +26,7 @@ pub struct GroupData {
     pub children: Vec<Id>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
     Node(NodeData),
     Group(GroupData),
@@ -95,10 +98,18 @@ impl Item {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
     pub from: Id,
     pub to: Id,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhiteboardData {
+    pub elements: HashMap<Id, Item>,
+    pub order: Vec<Id>,
+    pub connections: Vec<Connection>,
+    pub next_id: Id,
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +131,8 @@ pub enum Message {
     ResizeMove(f32, f32),
     ResizeEnd,
     SelectConnection(usize),
+    Save,
+    Load,
 }
 
 pub const NODE_W: f32 = 160.0;

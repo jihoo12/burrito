@@ -1,0 +1,63 @@
+{
+  "elements": {
+    "0": {
+      "Node": {
+        "id": 0,
+        "text": "Hello\nThis is a multiline\nnode",
+        "x": 139.71094,
+        "y": 110.70703,
+        "w": 160.0,
+        "h": 120.0
+      }
+    },
+    "1": {
+      "Node": {
+        "id": 1,
+        "text": "World\nDrag to move",
+        "x": 595.6953,
+        "y": 303.7461,
+        "w": 160.0,
+        "h": 120.0
+      }
+    },
+    "2": {
+      "Node": {
+        "id": 2,
+        "text": "Try editing me\nin the sidebar",
+        "x": 603.4297,
+        "y": 56.398438,
+        "w": 160.0,
+        "h": 120.0
+      }
+    },
+    "3": {
+      "Group": {
+        "id": 3,
+        "x": 82.61719,
+        "y": 60.6875,
+        "w": 300.0,
+        "h": 200.0,
+        "children": [
+          0
+        ]
+      }
+    }
+  },
+  "order": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "connections": [
+    {
+      "from": 0,
+      "to": 1
+    },
+    {
+      "from": 2,
+      "to": 1
+    }
+  ],
+  "next_id": 4
+}

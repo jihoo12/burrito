@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 
 use iced::widget::{
     button, column, container, row, text, text_editor, Canvas, Column,
@@ -165,6 +166,47 @@ impl Whiteboard {
             self.edit_content = None;
         }
     }
+
+    pub fn to_data(&self) -> WhiteboardData {
+        WhiteboardData {
+            elements: self.elements.clone(),
+            order: self.order.clone(),
+            connections: self.connections.clone(),
+            next_id: self.next_id,
+        }
+    }
+
+    pub fn from_data(data: WhiteboardData) -> Self {
+        Whiteboard {
+            elements: data.elements,
+            order: data.order,
+            connections: data.connections,
+            next_id: data.next_id,
+            selected: None,
+            drag: None,
+            pan_x: 0.0,
+            pan_y: 0.0,
+            pan_start: None,
+            connection_source: None,
+            connection_mode: false,
+            edit_content: None,
+            resize: None,
+            selected_connection: None,
+        }
+    }
+
+    pub fn save_to_file(&self, path: &str) -> Result<(), String> {
+        let data = self.to_data();
+        let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        fs::write(path, &json).map_err(|e| e.to_string())
+    }
+
+    pub fn load_from_file(&mut self, path: &str) -> Result<(), String> {
+        let json = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let data: WhiteboardData = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        *self = Whiteboard::from_data(data);
+        Ok(())
+    }
 }
 
 pub fn update(app: &mut Whiteboard, message: Message) {
@@ -301,6 +343,31 @@ pub fn update(app: &mut Whiteboard, message: Message) {
         Message::ResizeEnd => {
             app.resize = None;
         }
+        Message::Save => {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Save Whiteboard")
+                .add_filter("JSON", &["json"])
+                .set_file_name("whiteboard.json")
+                .save_file()
+            {
+                match app.save_to_file(path.to_str().unwrap_or("")) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Save failed: {}", e),
+                }
+            }
+        }
+        Message::Load => {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Load Whiteboard")
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            {
+                match app.load_from_file(path.to_str().unwrap_or("")) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Load failed: {}", e),
+                }
+            }
+        }
     }
 }
 
@@ -317,6 +384,11 @@ pub fn view(app: &Whiteboard) -> Element<'_, Message> {
             button(if app.connection_mode { "➜ On" } else { "➜ Connect" })
                 .on_press(Message::ToggleConnectionMode),
             button("Delete").on_press(Message::DeleteSelected),
+        ]
+        .spacing(5),
+        row![
+            button("💾 Save").on_press(Message::Save),
+            button("📂 Load").on_press(Message::Load),
         ]
         .spacing(5),
         text("").size(10),
