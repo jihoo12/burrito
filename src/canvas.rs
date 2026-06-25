@@ -73,10 +73,22 @@ impl Program<Message> for Whiteboard {
         frame.translate(Vector::new(self.pan_x, self.pan_y));
         frame.scale(self.zoom);
 
+        let vp_x = -self.pan_x / self.zoom;
+        let vp_y = -self.pan_y / self.zoom;
+        let vp_w = bounds.width / self.zoom;
+        let vp_h = bounds.height / self.zoom;
+
         for (i, conn) in self.connections.iter().enumerate() {
             let from = self.elements.get(&conn.from);
             let to = self.elements.get(&conn.to);
             if let (Some(from_elem), Some(to_elem)) = (from, to) {
+                if (from_elem.x() + from_elem.w() < vp_x || from_elem.x() > vp_x + vp_w
+                    || from_elem.y() + from_elem.h() < vp_y || from_elem.y() > vp_y + vp_h)
+                    && (to_elem.x() + to_elem.w() < vp_x || to_elem.x() > vp_x + vp_w
+                        || to_elem.y() + to_elem.h() < vp_y || to_elem.y() > vp_y + vp_h)
+                {
+                    continue;
+                }
                 let start = edge_point(from_elem.bounds(), to_elem.center());
                 let end = edge_point(to_elem.bounds(), from_elem.center());
                 if self.selected_connection == Some(i) {
@@ -95,6 +107,11 @@ impl Program<Message> for Whiteboard {
 
         for id in &self.order {
             if let Some(Item::Group(g)) = self.elements.get(id) {
+                if g.x + g.w < vp_x || g.x > vp_x + vp_w
+                    || g.y + g.h < vp_y || g.y > vp_y + vp_h
+                {
+                    continue;
+                }
                 let radius = border::Radius::new(8.0);
                 let path = Path::rounded_rectangle(
                     Point::new(g.x, g.y),
@@ -109,8 +126,13 @@ impl Program<Message> for Whiteboard {
                         .with_color(GROUP_BORDER),
                 );
 
+                let label = if g.label.is_empty() {
+                    format!("Group {}", g.id)
+                } else {
+                    g.label.clone()
+                };
                 frame.fill_text(canvas::Text {
-                    content: format!("Group {}", g.id),
+                    content: label,
                     position: Point::new(g.x + 10.0, g.y + 8.0),
                     color: GROUP_BORDER,
                     size: iced::Pixels(13.0),
@@ -122,6 +144,11 @@ impl Program<Message> for Whiteboard {
 
         for id in &self.order {
             if let Some(Item::Node(n)) = self.elements.get(id) {
+                if n.x + n.w < vp_x || n.x > vp_x + vp_w
+                    || n.y + n.h < vp_y || n.y > vp_y + vp_h
+                {
+                    continue;
+                }
                 let radius = border::Radius::new(6.0);
                 let path = Path::rounded_rectangle(
                     Point::new(n.x, n.y),

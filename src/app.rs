@@ -96,6 +96,7 @@ impl Whiteboard {
             id,
             Item::Group(GroupData {
                 id,
+                label: format!("Group {}", id),
                 x,
                 y,
                 w: GROUP_W,

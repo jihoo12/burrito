@@ -24,6 +24,8 @@ pub struct GroupData {
     pub w: f32,
     pub h: f32,
     pub children: Vec<Id>,
+    #[serde(default)]
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
