@@ -4,13 +4,13 @@ mod types;
 
 use iced::{Size, Theme};
 
-use crate::app::Whiteboard;
+use crate::app::App;
 
-fn new() -> Whiteboard {
-    Whiteboard::new()
+fn new() -> App {
+    App::new()
 }
 
-fn theme(_app: &Whiteboard) -> Theme {
+fn theme(_app: &App) -> Theme {
     Theme::Light
 }
 

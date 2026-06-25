@@ -133,6 +133,12 @@ pub enum Message {
     SelectConnection(usize),
     Save,
     Load,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    GoToLobby,
+    NewWhiteboard,
+    LoadFromDisk,
 }
 
 pub const NODE_W: f32 = 160.0;

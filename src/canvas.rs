@@ -67,6 +67,7 @@ impl Program<Message> for Whiteboard {
         }
 
         frame.translate(Vector::new(self.pan_x, self.pan_y));
+        frame.scale(self.zoom);
 
         for (i, conn) in self.connections.iter().enumerate() {
             let from = self.elements.get(&conn.from);
@@ -91,8 +92,8 @@ impl Program<Message> for Whiteboard {
         if self.connection_source.is_some() {
             if let mouse::Cursor::Available(cursor_pos) = _cursor {
                 let world_pos = Point::new(
-                    cursor_pos.x - bounds.x - self.pan_x,
-                    cursor_pos.y - bounds.y - self.pan_y,
+                    (cursor_pos.x - bounds.x - self.pan_x) / self.zoom,
+                    (cursor_pos.y - bounds.y - self.pan_y) / self.zoom,
                 );
                 if let Some(src) = self.elements.get(&self.connection_source.unwrap()) {
                     let start = src.center();
@@ -215,8 +216,10 @@ impl Program<Message> for Whiteboard {
                     return None;
                 }
 
-                let world_pos =
-                    Point::new(screen_pos.x - self.pan_x, screen_pos.y - self.pan_y);
+                let world_pos = Point::new(
+                    (screen_pos.x - self.pan_x) / self.zoom,
+                    (screen_pos.y - self.pan_y) / self.zoom,
+                );
 
                 if self.connection_mode {
                     if let Some(id) = self.find_element_at(world_pos) {
@@ -268,16 +271,16 @@ impl Program<Message> for Whiteboard {
 
                 if let Some(id) = self.resize {
                     if let Some(elem) = self.elements.get(&id) {
-                        let new_w = (screen_pos.x - self.pan_x - elem.x()).max(50.0);
-                        let new_h = (screen_pos.y - self.pan_y - elem.y()).max(30.0);
+                        let new_w = ((screen_pos.x - self.pan_x) / self.zoom - elem.x()).max(50.0);
+                        let new_h = ((screen_pos.y - self.pan_y) / self.zoom - elem.y()).max(30.0);
                         return Some(canvas::Action::publish(Message::ResizeMove(new_w, new_h)));
                     }
                 }
 
                 if self.drag.is_some() {
                     if let Some((_id, ox, oy)) = self.drag {
-                        let new_x = screen_pos.x - self.pan_x - ox;
-                        let new_y = screen_pos.y - self.pan_y - oy;
+                        let new_x = (screen_pos.x - self.pan_x) / self.zoom - ox;
+                        let new_y = (screen_pos.y - self.pan_y) / self.zoom - oy;
                         return Some(canvas::Action::publish(Message::DragMove(
                             new_x, new_y,
                         )));
@@ -313,7 +316,10 @@ impl Program<Message> for Whiteboard {
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         if let Some(pos) = cursor.position_in(_bounds) {
-            let world = Point::new(pos.x - self.pan_x, pos.y - self.pan_y);
+            let world = Point::new(
+                (pos.x - self.pan_x) / self.zoom,
+                (pos.y - self.pan_y) / self.zoom,
+            );
 
             if let Some(id) = self.selected {
                 if let Some(elem) = self.elements.get(&id) {

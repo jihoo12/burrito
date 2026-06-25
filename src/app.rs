@@ -5,10 +5,27 @@ use iced::widget::{
     button, column, container, row, text, text_editor, Canvas, Column,
 };
 use iced::{
-    border, Color, Element, Length, Point, Rectangle, Size, Theme,
+    border, Color, Element, Length, Point, Rectangle, Size, Theme, Alignment,
 };
 
 use crate::types::*;
+
+pub enum Phase {
+    Lobby,
+    Editor(Whiteboard),
+}
+
+pub struct App {
+    pub phase: Phase,
+}
+
+impl App {
+    pub fn new() -> Self {
+        App {
+            phase: Phase::Lobby,
+        }
+    }
+}
 
 pub struct Whiteboard {
     pub elements: HashMap<Id, Item>,
@@ -19,17 +36,19 @@ pub struct Whiteboard {
     pub drag: Option<(Id, f32, f32)>,
     pub pan_x: f32,
     pub pan_y: f32,
+    pub zoom: f32,
     pub pan_start: Option<Point>,
     pub connection_source: Option<Id>,
     pub connection_mode: bool,
     pub edit_content: Option<text_editor::Content>,
     pub resize: Option<Id>,
     pub selected_connection: Option<usize>,
+    pub current_path: Option<String>,
 }
 
 impl Whiteboard {
     pub fn new() -> Self {
-        let mut app = Whiteboard {
+        Whiteboard {
             elements: HashMap::new(),
             order: Vec::new(),
             connections: Vec::new(),
@@ -38,24 +57,15 @@ impl Whiteboard {
             drag: None,
             pan_x: 0.0,
             pan_y: 0.0,
+            zoom: 1.0,
             pan_start: None,
             connection_source: None,
             connection_mode: false,
             edit_content: None,
             resize: None,
             selected_connection: None,
-        };
-
-        let n1 = app.add_node("Hello\nThis is a multiline\nnode".into(), 100.0, 100.0);
-        let n2 = app.add_node("World\nDrag to move".into(), 400.0, 200.0);
-        let n3 = app.add_node("Try editing me\nin the sidebar".into(), 400.0, 100.0);
-        let g1 = app.add_group(80.0, 80.0);
-        app.add_child_to_group(g1, n1);
-        app.add_child_to_group(g1, n2);
-        app.connections.push(Connection { from: n1, to: n2 });
-        app.connections.push(Connection { from: n3, to: n2 });
-
-        app
+            current_path: None,
+        }
     }
 
     pub fn add_node(&mut self, text: String, x: f32, y: f32) -> Id {
@@ -186,12 +196,14 @@ impl Whiteboard {
             drag: None,
             pan_x: 0.0,
             pan_y: 0.0,
+            zoom: 1.0,
             pan_start: None,
             connection_source: None,
             connection_mode: false,
             edit_content: None,
             resize: None,
             selected_connection: None,
+            current_path: None,
         }
     }
 
@@ -209,72 +221,103 @@ impl Whiteboard {
     }
 }
 
-pub fn update(app: &mut Whiteboard, message: Message) {
+pub fn update(app: &mut App, message: Message) {
+    match message {
+        Message::NewWhiteboard => {
+            app.phase = Phase::Editor(Whiteboard::new());
+        }
+        Message::LoadFromDisk => {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Load Whiteboard")
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            {
+                let mut wb = Whiteboard::new();
+                let path_str = path.to_str().unwrap_or("").to_string();
+                match wb.load_from_file(&path_str) {
+                    Ok(_) => {
+                        wb.current_path = Some(path_str);
+                        app.phase = Phase::Editor(wb);
+                    }
+                    Err(e) => eprintln!("Load failed: {}", e),
+                }
+            }
+        }
+        Message::GoToLobby => {
+            app.phase = Phase::Lobby;
+        }
+        _ => {
+            if let Phase::Editor(ref mut wb) = app.phase {
+                editor_update(wb, message);
+            }
+        }
+    }
+}
+
+fn editor_update(wb: &mut Whiteboard, message: Message) {
     match message {
         Message::NewNode => {
-            let x = 100.0 - app.pan_x;
-            let y = 100.0 - app.pan_y;
-            let id = app.add_node("New Node".into(), x, y);
-            app.selected = Some(id);
-            app.edit_content = Some(text_editor::Content::with_text("New Node"));
+            let x = 100.0 - wb.pan_x;
+            let y = 100.0 - wb.pan_y;
+            let id = wb.add_node("New Node".into(), x, y);
+            wb.selected = Some(id);
+            wb.edit_content = Some(text_editor::Content::with_text("New Node"));
         }
         Message::NewGroup => {
-            let x = 80.0 - app.pan_x;
-            let y = 80.0 - app.pan_y;
-            let id = app.add_group(x, y);
-            app.selected = Some(id);
+            let x = 80.0 - wb.pan_x;
+            let y = 80.0 - wb.pan_y;
+            let id = wb.add_group(x, y);
+            wb.selected = Some(id);
         }
         Message::DeleteSelected => {
-            if let Some(idx) = app.selected_connection {
-                app.connections.remove(idx);
-                app.selected_connection = None;
-            } else if let Some(id) = app.selected {
-                app.delete_element(id);
+            if let Some(idx) = wb.selected_connection {
+                wb.connections.remove(idx);
+                wb.selected_connection = None;
+            } else if let Some(id) = wb.selected {
+                wb.delete_element(id);
             }
         }
         Message::SelectAndDrag(id, ox, oy) => {
-            app.selected = Some(id);
-            app.selected_connection = None;
-            app.connection_source = None;
-            app.drag = Some((id, ox, oy));
-            if let Some(Item::Node(n)) = app.elements.get(&id) {
-                app.edit_content = Some(text_editor::Content::with_text(&n.text));
+            wb.selected = Some(id);
+            wb.selected_connection = None;
+            wb.connection_source = None;
+            wb.drag = Some((id, ox, oy));
+            if let Some(Item::Node(n)) = wb.elements.get(&id) {
+                wb.edit_content = Some(text_editor::Content::with_text(&n.text));
             } else {
-                app.edit_content = None;
+                wb.edit_content = None;
             }
         }
         Message::DragMove(x, y) => {
-            if let Some((id, _, _)) = app.drag {
-                if let Some(elem) = app.elements.get(&id) {
+            if let Some((id, _, _)) = wb.drag {
+                if let Some(elem) = wb.elements.get(&id) {
                     let dx = x - elem.x();
                     let dy = y - elem.y();
-                    app.move_element(id, dx, dy);
+                    wb.move_element(id, dx, dy);
                 }
             }
         }
         Message::DragEnd => {
-            if let Some((id, _, _)) = app.drag {
-                // Always remove from any previous group
-                for (_, item) in app.elements.iter_mut() {
+            if let Some((id, _, _)) = wb.drag {
+                for (_, item) in wb.elements.iter_mut() {
                     if let Item::Group(grp) = item {
                         grp.children.retain(|c| *c != id);
                     }
                 }
-                // Re-add if dropped inside a group
-                let center = app.elements.get(&id).map(|e| e.center());
+                let center = wb.elements.get(&id).map(|e| e.center());
                 if let Some(center) = center {
-                    for g_id in app.order.clone() {
+                    for g_id in wb.order.clone() {
                         if g_id == id {
                             continue;
                         }
-                        if let Some(Item::Group(g)) = app.elements.get(&g_id) {
+                        if let Some(Item::Group(g)) = wb.elements.get(&g_id) {
                             let g_bounds =
                                 Rectangle::new(Point::new(g.x, g.y), Size::new(g.w, g.h));
                             if g_bounds.contains(center) {
-                                if let Some(Item::Group(grp)) = app.elements.get_mut(&id) {
+                                if let Some(Item::Group(grp)) = wb.elements.get_mut(&id) {
                                     grp.children.retain(|c| *c != g_id);
                                 }
-                                if let Some(Item::Group(grp)) = app.elements.get_mut(&g_id) {
+                                if let Some(Item::Group(grp)) = wb.elements.get_mut(&g_id) {
                                     grp.children.push(id);
                                 }
                                 break;
@@ -283,75 +326,90 @@ pub fn update(app: &mut Whiteboard, message: Message) {
                     }
                 }
             }
-            app.drag = None;
+            wb.drag = None;
         }
         Message::EditNodeText(id, action) => {
-            if let Some(content) = &mut app.edit_content {
+            if let Some(content) = &mut wb.edit_content {
                 content.perform(action);
                 let text = content.text();
-                if let Some(Item::Node(n)) = app.elements.get_mut(&id) {
+                if let Some(Item::Node(n)) = wb.elements.get_mut(&id) {
                     n.text = text;
                 }
             }
         }
         Message::ToggleConnectionMode => {
-            app.connection_mode = !app.connection_mode;
-            app.connection_source = None;
+            wb.connection_mode = !wb.connection_mode;
+            wb.connection_source = None;
         }
         Message::StartConnection(id) => {
-            app.connection_source = Some(id);
+            wb.connection_source = Some(id);
         }
         Message::EndConnection(id) => {
-            if let Some(src) = app.connection_source {
+            if let Some(src) = wb.connection_source {
                 if src != id {
-                    app.connections.push(Connection { from: src, to: id });
+                    wb.connections.push(Connection { from: src, to: id });
                 }
             }
-            app.connection_source = None;
+            wb.connection_source = None;
         }
         Message::PanStart(pos) => {
-            app.selected_connection = None;
-            app.pan_start = Some(pos);
+            wb.selected_connection = None;
+            wb.pan_start = Some(pos);
         }
         Message::SelectConnection(idx) => {
-            app.selected_connection = Some(idx);
-            app.selected = None;
-            app.edit_content = None;
+            wb.selected_connection = Some(idx);
+            wb.selected = None;
+            wb.edit_content = None;
         }
         Message::PanMove(pos) => {
-            if let Some(start) = app.pan_start {
+            if let Some(start) = wb.pan_start {
                 let dx = pos.x - start.x;
                 let dy = pos.y - start.y;
-                app.pan_x += dx;
-                app.pan_y += dy;
-                app.pan_start = Some(pos);
+                wb.pan_x += dx;
+                wb.pan_y += dy;
+                wb.pan_start = Some(pos);
             }
         }
         Message::PanEnd => {
-            app.pan_start = None;
+            wb.pan_start = None;
         }
         Message::ResizeStart(_id) => {
-            app.resize = Some(_id);
+            wb.resize = Some(_id);
         }
         Message::ResizeMove(new_w, new_h) => {
-            if let Some(id) = app.resize {
-                if let Some(elem) = app.elements.get_mut(&id) {
+            if let Some(id) = wb.resize {
+                if let Some(elem) = wb.elements.get_mut(&id) {
                     elem.set_size(new_w.max(50.0), new_h.max(30.0));
                 }
             }
         }
         Message::ResizeEnd => {
-            app.resize = None;
+            wb.resize = None;
+        }
+        Message::ZoomIn => {
+            wb.zoom = (wb.zoom * 1.2).min(5.0);
+        }
+        Message::ZoomOut => {
+            wb.zoom = (wb.zoom / 1.2).max(0.1);
+        }
+        Message::ZoomReset => {
+            wb.zoom = 1.0;
         }
         Message::Save => {
-            if let Some(path) = rfd::FileDialog::new()
+            if let Some(ref path) = wb.current_path.clone() {
+                match wb.save_to_file(path) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Save failed: {}", e),
+                }
+            } else if let Some(path) = rfd::FileDialog::new()
                 .set_title("Save Whiteboard")
                 .add_filter("JSON", &["json"])
                 .set_file_name("whiteboard.json")
                 .save_file()
             {
-                match app.save_to_file(path.to_str().unwrap_or("")) {
-                    Ok(_) => {}
+                let path_str = path.to_str().unwrap_or("").to_string();
+                match wb.save_to_file(&path_str) {
+                    Ok(_) => wb.current_path = Some(path_str),
                     Err(e) => eprintln!("Save failed: {}", e),
                 }
             }
@@ -362,57 +420,102 @@ pub fn update(app: &mut Whiteboard, message: Message) {
                 .add_filter("JSON", &["json"])
                 .pick_file()
             {
-                match app.load_from_file(path.to_str().unwrap_or("")) {
-                    Ok(_) => {}
+                let path_str = path.to_str().unwrap_or("").to_string();
+                match wb.load_from_file(&path_str) {
+                    Ok(_) => {
+                        wb.current_path = Some(path_str);
+                    }
                     Err(e) => eprintln!("Load failed: {}", e),
                 }
             }
         }
+        _ => {}
     }
 }
 
-pub fn view(app: &Whiteboard) -> Element<'_, Message> {
-    let canvas = Canvas::new(app).width(Length::Fill).height(Length::Fill);
+pub fn view(app: &App) -> Element<'_, Message> {
+    match &app.phase {
+        Phase::Lobby => lobby_view(),
+        Phase::Editor(wb) => editor_view(wb),
+    }
+}
 
-    let mut sidebar_children: Column<Message> = column![
-        row![
-            button("+ Node").on_press(Message::NewNode),
-            button("+ Group").on_press(Message::NewGroup),
+fn lobby_view() -> Element<'static, Message> {
+    container(
+        column![
+            text("Burrito Whiteboard").size(40),
+            text("").size(30),
+            button("+  Create New Whiteboard")
+                .on_press(Message::NewWhiteboard)
+                .padding(20),
+            text("").size(15),
+            button("📂  Load from Disk")
+                .on_press(Message::LoadFromDisk)
+                .padding(20),
         ]
-        .spacing(5),
-        row![
-            button(if app.connection_mode { "➜ On" } else { "➜ Connect" })
-                .on_press(Message::ToggleConnectionMode),
-            button("Delete").on_press(Message::DeleteSelected),
-        ]
-        .spacing(5),
-        row![
-            button("💾 Save").on_press(Message::Save),
-            button("📂 Load").on_press(Message::Load),
-        ]
-        .spacing(5),
-        text("").size(10),
+        .spacing(5)
+        .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn editor_view(wb: &Whiteboard) -> Element<'_, Message> {
+    let toolbar = toolbar_view(wb);
+    let canvas = Canvas::new(wb).width(Length::Fill).height(Length::Fill);
+    let sidebar = sidebar_view(wb);
+    let content = row![canvas, sidebar];
+    column![toolbar, content].into()
+}
+
+fn toolbar_view(wb: &Whiteboard) -> Element<'_, Message> {
+    row![
+        button("+ Node").on_press(Message::NewNode),
+        button("+ Group").on_press(Message::NewGroup),
+        text(" | ").size(16),
+        button(if wb.connection_mode { "➜ On" } else { "➜ Connect" })
+            .on_press(Message::ToggleConnectionMode),
+        button("Delete").on_press(Message::DeleteSelected),
+        text(" | ").size(16),
+        button("−").on_press(Message::ZoomOut),
+        text(format!("{:.0}%", wb.zoom * 100.0)).size(14),
+        button("+").on_press(Message::ZoomIn),
+        button("⟲").on_press(Message::ZoomReset),
+        text(" | ").size(16),
+        button("💾 Save").on_press(Message::Save),
+        button("📂 Load").on_press(Message::Load),
+        text(" | ").size(16),
+        button("🏠 Lobby").on_press(Message::GoToLobby),
     ]
-    .spacing(5)
-    .padding(10);
+    .spacing(4)
+    .padding(6)
+    .align_y(Alignment::Center)
+    .into()
+}
 
-    if let Some(id) = app.selected {
-        sidebar_children = sidebar_children.push(text("").size(5));
-        sidebar_children = sidebar_children.push(text("Selected:").size(14));
-        if let Some(elem) = app.elements.get(&id) {
+fn sidebar_view(wb: &Whiteboard) -> Element<'_, Message> {
+    let mut children: Column<Message> = column![].spacing(5).padding(10);
+
+    if let Some(id) = wb.selected {
+        children = children.push(text("").size(5));
+        children = children.push(text("Selected:").size(14));
+        if let Some(elem) = wb.elements.get(&id) {
             let label = match elem {
                 Item::Node(n) => format!("Node {}: {}", n.id, n.text),
                 Item::Group(g) => {
                     format!("Group {} ({} children)", g.id, g.children.len())
                 }
             };
-            sidebar_children = sidebar_children.push(text(label).size(12));
+            children = children.push(text(label).size(12));
 
             if let Item::Node(_) = elem {
-                sidebar_children = sidebar_children.push(text("").size(5));
-                sidebar_children = sidebar_children.push(text("Text:").size(12));
-                if let Some(content) = &app.edit_content {
-                    sidebar_children = sidebar_children.push(
+                children = children.push(text("").size(5));
+                children = children.push(text("Text:").size(12));
+                if let Some(content) = &wb.edit_content {
+                    children = children.push(
                         text_editor::TextEditor::new(content)
                             .on_action(move |action| Message::EditNodeText(id, action))
                             .height(Length::Fixed(150.0)),
@@ -422,16 +525,15 @@ pub fn view(app: &Whiteboard) -> Element<'_, Message> {
         }
     }
 
-    sidebar_children = sidebar_children.push(column![].height(Length::Fill));
+    children = children.push(column![].height(Length::Fill));
 
-    let sidebar = container(sidebar_children)
+    container(children)
         .width(SIDEBAR_W)
         .height(Length::Fill)
         .style(|_theme: &Theme| {
             container::Style::default()
                 .background(Color::from_rgb(0.98, 0.98, 0.98))
                 .border(border::color(Color::from_rgb(0.85, 0.85, 0.85)).width(1.0))
-        });
-
-    row![canvas, sidebar].into()
+        })
+        .into()
 }
