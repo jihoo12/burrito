@@ -1,4 +1,4 @@
-1. After the initial load or save, subsequent saves will overwrite the same file.
+1. After the initial load or save, subsequent saves will overwrite the same file automatically.
 2. add zoom in/out
 3. improve more ui/ux
 4. add top toolbar
