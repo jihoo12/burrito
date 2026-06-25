@@ -52,18 +52,23 @@ impl Program<Message> for Whiteboard {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
+        let grid = self.grid_cache.draw(renderer, bounds.size(), |frame| {
+            frame.fill_rectangle(Point::ORIGIN, bounds.size(), CANVAS_BG);
 
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), CANVAS_BG);
-
-        let grid = Path::new(|b| {
-            for x in (0..(bounds.width as i32)).step_by(40) {
-                for y in (0..(bounds.height as i32)).step_by(40) {
-                    b.rectangle(Point::new(x as f32, y as f32), Size::new(1.0, 1.0));
+            let path = Path::new(|b| {
+                for x in (0..(bounds.width as i32)).step_by(40) {
+                    for y in (0..(bounds.height as i32)).step_by(40) {
+                        b.rectangle(
+                            Point::new(x as f32, y as f32),
+                            Size::new(1.0, 1.0),
+                        );
+                    }
                 }
-            }
+            });
+            frame.fill(&path, GRID_COLOR);
         });
-        frame.fill(&grid, GRID_COLOR);
+
+        let mut frame = Frame::new(renderer, bounds.size());
 
         frame.translate(Vector::new(self.pan_x, self.pan_y));
         frame.scale(self.zoom);
@@ -176,7 +181,7 @@ impl Program<Message> for Whiteboard {
             }
         }
 
-        vec![frame.into_geometry()]
+        vec![grid, frame.into_geometry()]
     }
 
     fn update(

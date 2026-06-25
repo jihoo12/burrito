@@ -4,6 +4,7 @@ use std::fs;
 use iced::widget::{
     button, column, container, row, text, text_editor, Canvas, Column,
 };
+use iced::widget::canvas::Cache;
 use iced::{
     border, Color, Element, Length, Point, Rectangle, Size, Theme, Alignment,
 };
@@ -44,6 +45,7 @@ pub struct Whiteboard {
     pub resize: Option<Id>,
     pub selected_connection: Option<usize>,
     pub current_path: Option<String>,
+    pub grid_cache: Cache,
 }
 
 impl Whiteboard {
@@ -65,6 +67,7 @@ impl Whiteboard {
             resize: None,
             selected_connection: None,
             current_path: None,
+            grid_cache: Cache::new(),
         }
     }
 
@@ -205,6 +208,7 @@ impl Whiteboard {
             resize: None,
             selected_connection: None,
             current_path: None,
+            grid_cache: Cache::new(),
         }
     }
 
@@ -258,6 +262,8 @@ pub fn update(app: &mut App, message: Message) {
 fn editor_update(wb: &mut Whiteboard, message: Message) {
     match message {
         Message::NewNode => {
+            wb.connection_mode = false;
+            wb.connection_source = None;
             let x = 100.0 - wb.pan_x;
             let y = 100.0 - wb.pan_y;
             let id = wb.add_node("New Node".into(), x, y);
@@ -265,12 +271,16 @@ fn editor_update(wb: &mut Whiteboard, message: Message) {
             wb.edit_content = Some(text_editor::Content::with_text("New Node"));
         }
         Message::NewGroup => {
+            wb.connection_mode = false;
+            wb.connection_source = None;
             let x = 80.0 - wb.pan_x;
             let y = 80.0 - wb.pan_y;
             let id = wb.add_group(x, y);
             wb.selected = Some(id);
         }
         Message::DeleteSelected => {
+            wb.connection_mode = false;
+            wb.connection_source = None;
             if let Some(idx) = wb.selected_connection {
                 wb.connections.remove(idx);
                 wb.selected_connection = None;
