@@ -18,6 +18,7 @@ use super::{
     data::{AnimatedGraph, AnimatedParametricCurve, PlotData},
     geometry::{create_full_grid_data, plot_parametric_curve, plot_wireframe},
     mesh::{Mesh, merge_meshes},
+    plot2d::{self, format_tick},
     vertex::Vertex,
 };
 
@@ -165,6 +166,22 @@ pub struct App<'a> {
 
     /// Show/hide the reference grid.
     pub show_grid: bool,
+
+    /// 2D plotting mode toggle.
+    pub mode_2d: bool,
+
+    /// 2D line plots (GPU meshes).
+    plot2d_lines_gpu: Vec<GpuMesh>,
+    /// 2D scatter plot (GPU mesh).
+    plot2d_scatter_gpu: GpuMesh,
+    /// 2D axes (spines, ticks, grid).
+    axes_2d: GpuMesh,
+    /// 2D axis tick label buffers.
+    axis_labels_2d: Vec<(Vec3, GlyphBuffer)>,
+    /// 2D data bounds [x_min, x_max, y_min, y_max].
+    plot2d_bounds: [f32; 4],
+    /// Background color for 2D mode.
+    bg_color_2d: [f32; 4],
 }
 
 impl<'a> App<'a> {
@@ -360,6 +377,84 @@ impl<'a> App<'a> {
             vec![]
         };
 
+        // ── 2D plot data initialization ─────────────────────────────────────────
+        let plot2d_lines_gpu: Vec<GpuMesh> = data
+            .plot2d_lines
+            .iter()
+            .map(|line| {
+                let mesh = plot2d::plot_2d_line(&line.x_range, |x| (line.func)(x), line.color);
+                GpuMesh::upload(&device, &mesh)
+            })
+            .collect();
+
+        let scatter_meshes: Vec<Mesh> = data
+            .plot2d_scatters
+            .iter()
+            .map(|s| plot2d::plot_2d_scatter(&s.points, s.color))
+            .collect();
+        let plot2d_scatter_gpu = GpuMesh::upload(&device, &merge_meshes(scatter_meshes));
+
+        // Compute 2D data bounds
+        let mut bounds_x_min = f32::MAX;
+        let mut bounds_x_max = f32::MIN;
+        let mut bounds_y_min = f32::MAX;
+        let mut bounds_y_max = f32::MIN;
+
+        for line in &data.plot2d_lines {
+            for &x in line.x_range.iter() {
+                let y = (line.func)(x);
+                bounds_x_min = bounds_x_min.min(x);
+                bounds_x_max = bounds_x_max.max(x);
+                bounds_y_min = bounds_y_min.min(y);
+                bounds_y_max = bounds_y_max.max(y);
+            }
+        }
+        for s in &data.plot2d_scatters {
+            for &[x, y] in &s.points {
+                bounds_x_min = bounds_x_min.min(x);
+                bounds_x_max = bounds_x_max.max(x);
+                bounds_y_min = bounds_y_min.min(y);
+                bounds_y_max = bounds_y_max.max(y);
+            }
+        }
+        if bounds_x_min == f32::MAX {
+            bounds_x_min = -5.0;
+            bounds_x_max = 5.0;
+            bounds_y_min = -2.0;
+            bounds_y_max = 2.0;
+        }
+        let x_pad = (bounds_x_max - bounds_x_min) * 0.1;
+        let y_pad = (bounds_y_max - bounds_y_min) * 0.1;
+        let plot2d_bounds = [
+            bounds_x_min - x_pad,
+            bounds_x_max + x_pad,
+            bounds_y_min - y_pad,
+            bounds_y_max + y_pad,
+        ];
+
+        let axes_2d_mesh = plot2d::create_2d_axes(
+            bounds_x_min - x_pad,
+            bounds_x_max + x_pad,
+            bounds_y_min - y_pad,
+            bounds_y_max + y_pad,
+            plot_config.grid_divisions,
+            plot_config.grid_divisions,
+            true,
+        );
+        let axes_2d = GpuMesh::upload(&device, &axes_2d_mesh);
+
+        let axis_labels_2d = Self::build_2d_axis_label_buffers(
+            bounds_x_min - x_pad,
+            bounds_x_max + x_pad,
+            bounds_y_min - y_pad,
+            bounds_y_max + y_pad,
+            plot_config.grid_divisions,
+            plot_config.grid_divisions,
+            &mut font_system,
+        );
+
+        let bg_color_2d = [0.95, 0.95, 0.97, 1.0];
+
         Self {
             camera: Camera::new(),
             surface,
@@ -395,6 +490,13 @@ impl<'a> App<'a> {
             axis_labels,
             gui: None,
             show_grid: true,
+            mode_2d: false,
+            plot2d_lines_gpu,
+            plot2d_scatter_gpu,
+            axes_2d,
+            axis_labels_2d,
+            plot2d_bounds,
+            bg_color_2d,
         }
     }
 
@@ -469,7 +571,52 @@ impl<'a> App<'a> {
         labels
     }
 
+    // ── 2D axis tick label buffers ─────────────────────────────────────────────
 
+    fn build_2d_axis_label_buffers(
+        x_min: f32,
+        x_max: f32,
+        y_min: f32,
+        y_max: f32,
+        x_ticks: usize,
+        y_ticks: usize,
+        font_system: &mut FontSystem,
+    ) -> Vec<(Vec3, GlyphBuffer)> {
+        let x_step = (x_max - x_min) / x_ticks.max(1) as f32;
+        let y_step = (y_max - y_min) / y_ticks.max(1) as f32;
+        let offset = (y_max - y_min) * 0.03;
+        let mut labels = Vec::new();
+
+        let make_buf = |font_system: &mut FontSystem, text: &str| {
+            let mut buf = GlyphBuffer::new(font_system, Metrics::new(12.0, 16.0));
+            buf.set_size(font_system, Some(70.0), Some(20.0));
+            buf.set_text(
+                font_system,
+                text,
+                &Attrs::new().family(Family::Monospace),
+                Shaping::Basic,
+                None,
+            );
+            buf
+        };
+
+        for i in 0..=x_ticks {
+            let x = x_min + i as f32 * x_step;
+            labels.push((
+                Vec3::new(x, y_min - offset, 0.0),
+                make_buf(font_system, &format_tick(x)),
+            ));
+        }
+        for i in 0..=y_ticks {
+            let y = y_min + i as f32 * y_step;
+            labels.push((
+                Vec3::new(x_min - offset * 2.0, y, 0.0),
+                make_buf(font_system, &format_tick(y)),
+            ));
+        }
+
+        labels
+    }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
@@ -562,7 +709,11 @@ impl<'a> App<'a> {
     /// 카메라 행렬 업로드 + 애니메이션 메시 갱신. render() 전에 호출합니다.
     pub fn update(&mut self) {
         let aspect = self.size.width as f32 / self.size.height as f32;
-        let view_proj = self.camera.view_proj_matrix(aspect);
+        let view_proj = if self.mode_2d {
+            self.camera.view_proj_matrix_2d(aspect, self.plot2d_bounds)
+        } else {
+            self.camera.view_proj_matrix(aspect)
+        };
         self.view_proj = view_proj;
         self.queue.write_buffer(
             &self.camera_buffer,
@@ -659,15 +810,14 @@ impl<'a> App<'a> {
             })
             .collect();
 
-        // 축 눈금 TextArea: 뷰-프로젝션으로 3D 월드 좌표 → 2D 화면 좌표로 투영
+        // 축 눈금 TextArea: 뷰-프로젝션으로 3D/2D 월드 좌표 → 2D 화면 좌표로 투영
         let w = self.size.width as f32;
         let h = self.size.height as f32;
-        let axis_areas: Vec<TextArea> = self
-            .axis_labels
+        let labels = if self.mode_2d { &self.axis_labels_2d } else { &self.axis_labels };
+        let axis_areas: Vec<TextArea> = labels
             .iter()
             .filter_map(|(pos, buf)| {
                 let clip = self.view_proj * Vec4::new(pos.x, pos.y, pos.z, 1.0);
-                // 카메라 뒤쪽이거나 NDC 범위 밖이면 건너뜁니다.
                 if clip.w <= 0.0 {
                     return None;
                 }
@@ -675,7 +825,6 @@ impl<'a> App<'a> {
                 if ndc.x < -1.1 || ndc.x > 1.1 || ndc.y < -1.1 || ndc.y > 1.1 {
                     return None;
                 }
-                // NDC → 픽셀 좌표 (Y축 반전)
                 let sx = (ndc.x + 1.0) * 0.5 * w;
                 let sy = (1.0 - ndc.y) * 0.5 * h;
                 Some(TextArea {
@@ -684,7 +833,7 @@ impl<'a> App<'a> {
                     top: sy,
                     scale: 1.0,
                     bounds: TextBounds::default(),
-                    default_color: GlyphColor::rgb(140, 140, 155),
+                    default_color: GlyphColor::rgb(60, 60, 60),
                     custom_glyphs: &[],
                 })
             })
@@ -714,8 +863,8 @@ impl<'a> App<'a> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         {
-            // f32 → f64 변환: wgpu Color 구조체는 f64를 사용합니다.
-            let [r, g, b, a] = self.background_color.map(f64::from);
+            let bg = if self.mode_2d { self.bg_color_2d } else { self.background_color };
+            let [r, g, b, a] = bg.map(f64::from);
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Main Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -743,28 +892,36 @@ impl<'a> App<'a> {
 
             rp.set_bind_group(0, &self.camera_bind_group, &[]);
 
-            // 정적 메시
-            rp.set_pipeline(&self.line_pipeline);
-            if self.show_grid {
-                self.draw_mesh(&mut rp, &self.grid);
-            }
-            self.draw_mesh(&mut rp, &self.graph);
-            self.draw_mesh(&mut rp, &self.parametric_curves);
+            if self.mode_2d {
+                rp.set_pipeline(&self.line_pipeline);
+                self.draw_mesh(&mut rp, &self.axes_2d);
+                for gpu in &self.plot2d_lines_gpu {
+                    self.draw_mesh(&mut rp, gpu);
+                }
+                if self.plot2d_scatter_gpu.index_count > 0 {
+                    rp.set_pipeline(&self.point_pipeline);
+                    self.draw_mesh(&mut rp, &self.plot2d_scatter_gpu);
+                }
+            } else {
+                rp.set_pipeline(&self.line_pipeline);
+                if self.show_grid {
+                    self.draw_mesh(&mut rp, &self.grid);
+                }
+                self.draw_mesh(&mut rp, &self.graph);
+                self.draw_mesh(&mut rp, &self.parametric_curves);
 
-            // 애니메이션 메시
-            for gpu in &self.animated_gpu {
-                self.draw_mesh(&mut rp, gpu);
-            }
+                for gpu in &self.animated_gpu {
+                    self.draw_mesh(&mut rp, gpu);
+                }
 
-            // 애니메이션 파라메트릭 곡선
-            for gpu in &self.animated_curve_gpu {
-                self.draw_mesh(&mut rp, gpu);
-            }
+                for gpu in &self.animated_curve_gpu {
+                    self.draw_mesh(&mut rp, gpu);
+                }
 
-            // 산점도
-            if self.scatter.index_count > 0 {
-                rp.set_pipeline(&self.point_pipeline);
-                self.draw_mesh(&mut rp, &self.scatter);
+                if self.scatter.index_count > 0 {
+                    rp.set_pipeline(&self.point_pipeline);
+                    self.draw_mesh(&mut rp, &self.scatter);
+                }
             }
 
             // 텍스트 오버레이 (범례 + 축 눈금) — 같은 렌더패스 내
@@ -796,26 +953,7 @@ impl<'a> App<'a> {
     pub fn format(&self) -> wgpu::TextureFormat { self.config.format }
 }
 
-// ---------------------------------------------------------------------------
-// 애니메이션 프레임 헬퍼 — 기존 Vec<Vertex>를 재사용해 할당을 피합니다.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 눈금 값 포매터
-// ---------------------------------------------------------------------------
-
-/// 격자 눈금 값을 간결한 문자열로 변환합니다.
-///
-/// - 정수면 소수점 없이 출력 (`6` → `"6"`)
-/// - 소수점이 필요하면 한 자리까지 출력 (`6.5` → `"6.5"`)
-fn format_tick(v: f32) -> String {
-    if (v - v.round()).abs() < 1e-4 {
-        format!("{}", v as i32)
-    } else {
-        format!("{:.1}", v)
-    }
-}
-/// `out`의 길이는 `x_range.len() * z_range.len()`과 일치해야 합니다.
+    /// `out`의 길이는 `x_range.len() * z_range.len()`과 일치해야 합니다.
 fn plot_wireframe_into(
     out: &mut Vec<Vertex>,
     x_range: &[f32],

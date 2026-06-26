@@ -9,6 +9,19 @@ pub type CurveFn = Box<dyn Fn(f32) -> [f32; 3] + Send + 'static>;
 /// 시간 `t`도 받는 애니메이션 파라메트릭 곡선 함수 타입.
 pub type AnimCurveFn = Box<dyn Fn(f32, f32) -> [f32; 3] + Send + 'static>;
 
+/// 2D line plot: y = f(x)
+pub struct Plot2DLine {
+    pub x_range: Box<[f32]>,
+    pub func: Box<dyn Fn(f32) -> f32 + Send + 'static>,
+    pub color: [f32; 3],
+}
+
+/// 2D scatter plot
+pub struct Plot2DScatter {
+    pub points: Vec<[f32; 2]>,
+    pub color: [f32; 3],
+}
+
 /// CPU 측 정적 파라메트릭 곡선 정의.
 ///
 /// `u_range`의 각 값에 대해 `func(u)` → `[x, y, z]`를 호출해 선분 메시를 생성합니다.
@@ -46,6 +59,8 @@ pub struct PlotData {
     pub animated_graphs: Vec<AnimatedGraph>,
     pub parametric_curves: Vec<ParametricCurve>,
     pub animated_parametric_curves: Vec<AnimatedParametricCurve>,
+    pub plot2d_lines: Vec<Plot2DLine>,
+    pub plot2d_scatters: Vec<Plot2DScatter>,
     pub config: PlotConfig,
 }
 
@@ -115,6 +130,27 @@ impl PlotData {
             func: Box::new(func),
             color,
         });
+        self
+    }
+
+    /// 2D line plot y = f(x)을 추가합니다.
+    pub fn add_plot2d_line(
+        mut self,
+        x_range: impl Into<Box<[f32]>>,
+        func: impl Fn(f32) -> f32 + Send + 'static,
+        color: [f32; 3],
+    ) -> Self {
+        self.plot2d_lines.push(Plot2DLine {
+            x_range: x_range.into(),
+            func: Box::new(func),
+            color,
+        });
+        self
+    }
+
+    /// 2D scatter plot을 추가합니다.
+    pub fn add_plot2d_scatter(mut self, points: Vec<[f32; 2]>, color: [f32; 3]) -> Self {
+        self.plot2d_scatters.push(Plot2DScatter { points, color });
         self
     }
 

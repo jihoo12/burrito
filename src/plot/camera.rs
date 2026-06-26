@@ -157,4 +157,36 @@ impl Camera {
         let view = Mat4::look_at_rh(eye, self.target, Vec3::Y);
         OPENGL_TO_WGPU * proj * view
     }
+
+    pub fn view_proj_matrix_2d(&self, aspect: f32, data_bounds: [f32; 4]) -> Mat4 {
+        let (x_min, x_max, y_min, y_max) = (data_bounds[0], data_bounds[1], data_bounds[2], data_bounds[3]);
+
+        let pad = 1.2;
+        let mut view_w = (x_max - x_min).max(1.0) * pad;
+        let mut view_h = (y_max - y_min).max(1.0) * pad;
+
+        let zoom = self.radius / 15.0;
+        view_w *= zoom;
+        view_h *= zoom;
+
+        if view_w / view_h > aspect {
+            view_h = view_w / aspect;
+        } else {
+            view_w = view_h * aspect;
+        }
+
+        let cx = self.target.x;
+        let cy = self.target.y;
+
+        let proj = Mat4::orthographic_rh(
+            cx - view_w * 0.5,
+            cx + view_w * 0.5,
+            cy - view_h * 0.5,
+            cy + view_h * 0.5,
+            -1.0,
+            100.0,
+        );
+        let view = Mat4::look_at_rh(Vec3::new(cx, cy, 10.0), Vec3::new(cx, cy, 0.0), Vec3::Y);
+        OPENGL_TO_WGPU * proj * view
+    }
 }

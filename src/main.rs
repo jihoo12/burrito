@@ -20,6 +20,7 @@ struct Handler {
     show_gui_demo: bool,
     wave_speed: f32,
     show_grid: bool,
+    mode_2d: bool,
 }
 
 impl ApplicationHandler for Handler {
@@ -123,12 +124,14 @@ impl ApplicationHandler for Handler {
                     // Demo control panel
                     let ctrl_x = 12.0;
                     let ctrl_y = 12.0;
-                    gui.group("Controls", ctrl_x, ctrl_y, 220.0, 200.0, |g| {
+                    gui.group("Controls", ctrl_x, ctrl_y, 220.0, 230.0, |g| {
                         g.checkbox("Show demo panel", ctrl_x + 4.0, ctrl_y + 28.0, &mut self.show_gui_demo);
                         g.slider("Wave speed", ctrl_x + 4.0, ctrl_y + 56.0, 160.0, &mut self.wave_speed, 0.0, 10.0);
                         g.checkbox("Show grid", ctrl_x + 4.0, ctrl_y + 96.0, &mut self.show_grid);
                         app.show_grid = self.show_grid;
-                        if g.button("Reset camera", ctrl_x + 4.0, ctrl_y + 126.0, 150.0, 26.0) {
+                        g.checkbox("2D mode", ctrl_x + 4.0, ctrl_y + 126.0, &mut self.mode_2d);
+                        app.mode_2d = self.mode_2d;
+                        if g.button("Reset camera", ctrl_x + 4.0, ctrl_y + 156.0, 150.0, 24.0) {
                             app.camera = plot::Camera::new();
                         }
                     });
@@ -174,6 +177,11 @@ fn main() {
         .map(|i| i as f32 / 600.0 * 2.0 * std::f32::consts::PI)
         .collect();
 
+    // 2D line plot samples
+    let plot2d_samples: Vec<f32> = (0..=400)
+        .map(|i| -6.0 + i as f32 / 400.0 * 12.0)
+        .collect();
+
     let config = plot::PlotConfig {
         grid_size: 12.0,
         grid_divisions: 12,
@@ -216,6 +224,17 @@ fn main() {
                 [x, y, z]
             },
             [0.3, 0.6, 1.0],
+        )
+        // 2D line plots (matplotlib-style)
+        .add_plot2d_line(
+            plot2d_samples.clone(),
+            |x| x.sin(),
+            [0.2, 0.4, 0.8],
+        )
+        .add_plot2d_line(
+            plot2d_samples,
+            |x| (2.0 * x).cos() * 0.7,
+            [0.8, 0.2, 0.2],
         );
 
     let event_loop = EventLoop::new().unwrap();
@@ -225,6 +244,7 @@ fn main() {
         show_gui_demo: true,
         wave_speed: 5.0,
         show_grid: true,
+        mode_2d: false,
     };
     event_loop.run_app(&mut handler).unwrap();
 }
