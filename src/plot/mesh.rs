@@ -16,6 +16,7 @@ impl Mesh {
     }
 
     /// 이 메시가 비어 있는지 확인합니다.
+    #[allow(dead_code)]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()

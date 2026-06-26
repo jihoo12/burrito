@@ -1,5 +1,4 @@
 use glam::{Mat4, Vec3};
-use std::f32::consts::PI;
 
 /// OpenGL → WGPU 좌표계 변환 (NDC Z: [−1,1] → [0,1])
 #[rustfmt::skip]
@@ -56,12 +55,16 @@ impl Camera {
 
     // ── 읽기 접근자 ──────────────────────────────────────────────────────────
 
+    #[allow(dead_code)]
     #[inline] pub fn yaw(&self)    -> f32 { self.yaw    }
+    #[allow(dead_code)]
     #[inline] pub fn pitch(&self)  -> f32 { self.pitch  }
+    #[allow(dead_code)]
     #[inline] pub fn radius(&self) -> f32 { self.radius }
 
     // ── 쓰기 접근자 (불변식 보호) ────────────────────────────────────────────
 
+    #[allow(dead_code)]
     pub fn set_yaw(&mut self, yaw: f32) {
         self.yaw = yaw;
     }

@@ -115,6 +115,7 @@ pub struct App<'a> {
 
     line_pipeline: wgpu::RenderPipeline,
     point_pipeline: wgpu::RenderPipeline,
+    fill_pipeline: wgpu::RenderPipeline,
 
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -144,6 +145,7 @@ pub struct App<'a> {
     // 범례 (glyphon)
     font_system: FontSystem,
     swash_cache: SwashCache,
+    #[allow(dead_code)]
     glyph_cache: GlyphCache,
     text_atlas: TextAtlas,
     text_renderer: TextRenderer,
@@ -174,6 +176,8 @@ pub struct App<'a> {
     plot2d_lines_gpu: Vec<GpuMesh>,
     /// 2D scatter plot (GPU mesh).
     plot2d_scatter_gpu: GpuMesh,
+    /// 2D filled meshes (bar chart, fill_between, etc.) — rendered as triangles.
+    plot2d_filled_gpu: Vec<GpuMesh>,
     /// 2D axes (spines, ticks, grid).
     axes_2d: GpuMesh,
     /// 2D axis tick label buffers.
@@ -298,6 +302,14 @@ impl<'a> App<'a> {
             wgpu::PrimitiveTopology::PointList,
             "Point Pipeline",
         );
+        let fill_pipeline = Self::build_pipeline(
+            &device,
+            &shader,
+            &pipeline_layout,
+            format,
+            wgpu::PrimitiveTopology::TriangleList,
+            "Fill Pipeline",
+        );
 
         // ── GPU 메시 업로드 ──────────────────────────────────────────────────
         let grid_mesh = create_full_grid_data(plot_config.grid_size, plot_config.grid_divisions);
@@ -394,6 +406,12 @@ impl<'a> App<'a> {
             .collect();
         let plot2d_scatter_gpu = GpuMesh::upload(&device, &merge_meshes(scatter_meshes));
 
+        let plot2d_filled_gpu: Vec<GpuMesh> = data
+            .plot2d_filled
+            .iter()
+            .map(|mesh| GpuMesh::upload(&device, mesh))
+            .collect();
+
         // Compute 2D data bounds
         let mut bounds_x_min = f32::MAX;
         let mut bounds_x_max = f32::MIN;
@@ -464,6 +482,7 @@ impl<'a> App<'a> {
             size,
             line_pipeline,
             point_pipeline,
+            fill_pipeline,
             camera_buffer,
             camera_bind_group,
             depth_view,
@@ -493,6 +512,7 @@ impl<'a> App<'a> {
             mode_2d: false,
             plot2d_lines_gpu,
             plot2d_scatter_gpu,
+            plot2d_filled_gpu,
             axes_2d,
             axis_labels_2d,
             plot2d_bounds,
@@ -893,6 +913,10 @@ impl<'a> App<'a> {
             rp.set_bind_group(0, &self.camera_bind_group, &[]);
 
             if self.mode_2d {
+                rp.set_pipeline(&self.fill_pipeline);
+                for gpu in &self.plot2d_filled_gpu {
+                    self.draw_mesh(&mut rp, gpu);
+                }
                 rp.set_pipeline(&self.line_pipeline);
                 self.draw_mesh(&mut rp, &self.axes_2d);
                 for gpu in &self.plot2d_lines_gpu {

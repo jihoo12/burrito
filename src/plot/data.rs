@@ -61,6 +61,7 @@ pub struct PlotData {
     pub animated_parametric_curves: Vec<AnimatedParametricCurve>,
     pub plot2d_lines: Vec<Plot2DLine>,
     pub plot2d_scatters: Vec<Plot2DScatter>,
+    pub plot2d_filled: Vec<Mesh>,
     pub config: PlotConfig,
 }
 
@@ -76,12 +77,14 @@ impl PlotData {
     }
 
     /// 정적 와이어프레임 그래프를 추가합니다.
+    #[allow(dead_code)]
     pub fn add_graph(mut self, mesh: Mesh) -> Self {
         self.graphs.push(mesh);
         self
     }
 
     /// 산점도를 추가합니다.
+    #[allow(dead_code)]
     pub fn add_scatter(mut self, mesh: Mesh) -> Self {
         self.scatters.push(mesh);
         self
@@ -149,8 +152,15 @@ impl PlotData {
     }
 
     /// 2D scatter plot을 추가합니다.
+    #[allow(dead_code)]
     pub fn add_plot2d_scatter(mut self, points: Vec<[f32; 2]>, color: [f32; 3]) -> Self {
         self.plot2d_scatters.push(Plot2DScatter { points, color });
+        self
+    }
+
+    /// 2D filled mesh (bar chart, fill_between)를 추가합니다.
+    pub fn add_plot2d_filled(mut self, mesh: Mesh) -> Self {
+        self.plot2d_filled.push(mesh);
         self
     }
 

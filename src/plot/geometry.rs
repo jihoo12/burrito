@@ -97,6 +97,7 @@ pub fn plot_wireframe(
 }
 
 /// 3D 산점도 메시를 생성합니다.
+#[allow(dead_code)]
 pub fn plot_scatter(points: &[(f32, f32, f32)], color: [f32; 3]) -> Mesh {
     let vertices: Vec<Vertex> = points
         .iter()
