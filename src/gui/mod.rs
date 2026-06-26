@@ -78,6 +78,14 @@ pub struct Gui {
     mouse_pressed: bool,
     mouse_released: bool,
 
+    // Keyboard state
+    focused: u64,
+    was_focused: u64,
+    input_chars: Vec<char>,
+    key_backspace: bool,
+    key_enter: bool,
+    key_delete: bool,
+
     // ID stack
     id_gen: u64,
     hot: u64,
@@ -210,6 +218,12 @@ impl Gui {
             mouse_down: false,
             mouse_pressed: false,
             mouse_released: false,
+            focused: 0,
+            was_focused: 0,
+            input_chars: Vec::new(),
+            key_backspace: false,
+            key_enter: false,
+            key_delete: false,
             id_gen: 1,
             hot: 0,
             active: 0,
@@ -254,6 +268,23 @@ impl Gui {
         self.screen_h = h as f32;
     }
 
+    pub fn key_event(&mut self, c: Option<char>, backspace: bool, delete: bool, enter: bool) {
+        if let Some(c) = c {
+            if self.input_chars.len() < 1024 {
+                self.input_chars.push(c);
+            }
+        }
+        if backspace {
+            self.key_backspace = true;
+        }
+        if delete {
+            self.key_delete = true;
+        }
+        if enter {
+            self.key_enter = true;
+        }
+    }
+
     // ── Frame lifecycle ────────────────────────────────────────────────────────
 
     pub fn begin_frame(&mut self, w: u32, h: u32) {
@@ -264,6 +295,13 @@ impl Gui {
         self.texts.clear();
         self.hot = 0;
         self.id_gen = 1;
+
+        if self.was_focused == 0 {
+            self.input_chars.clear();
+            self.key_backspace = false;
+            self.key_enter = false;
+            self.key_delete = false;
+        }
     }
 
     // ── Internal helpers ───────────────────────────────────────────────────────
@@ -388,6 +426,71 @@ impl Gui {
         self.add_border(x, y, w, h, [0.3, 0.3, 0.3, 1.0]);
         self.add_text(&format!("{:.2}", value), x + w + 6.0, y - 1.0, [0.7, 0.7, 0.7, 1.0]);
         self.add_text(label, x, y + h + 2.0, [0.6, 0.6, 0.6, 1.0]);
+    }
+
+    pub fn text_area(&mut self, x: f32, y: f32, w: f32, h: f32, text: &mut String) {
+        let id = self.gen_id();
+        let over = self.hover(x, y, w, h);
+
+        if over && self.mouse_pressed && self.active == 0 {
+            self.active = id;
+            self.focused = id;
+        }
+        if self.active == id && self.mouse_released {
+            self.active = 0;
+        }
+
+        if self.focused == id {
+            for c in self.input_chars.drain(..) {
+                text.push(c);
+            }
+            if self.key_backspace {
+                text.pop();
+                self.key_backspace = false;
+            }
+            if self.key_delete {
+                // delete at cursor would be more complex; skip for now
+                self.key_delete = false;
+            }
+            if self.key_enter {
+                text.push('\n');
+                self.key_enter = false;
+            }
+        }
+
+        let bg = if self.focused == id {
+            [0.12, 0.12, 0.16, 1.0]
+        } else {
+            [0.09, 0.09, 0.11, 1.0]
+        };
+        self.add_rect(x, y, w, h, bg);
+        let bc = if self.focused == id {
+            [0.4, 0.6, 0.8, 1.0]
+        } else {
+            [0.25, 0.25, 0.28, 1.0]
+        };
+        self.add_border(x, y, w, h, bc);
+
+        let line_h = 16.0;
+        let mut line_y = y + 3.0;
+        let mut last_line = "";
+        for line in text.lines() {
+            last_line = line;
+            if line_y + line_h > y + h - 2.0 {
+                break;
+            }
+            self.add_text(line, x + 4.0, line_y, [0.85, 0.85, 0.85, 1.0]);
+            line_y += line_h;
+        }
+
+        if self.focused == id {
+            let num_lines = text.matches('\n').count() as f32;
+            let cursor_x = x + 4.0 + last_line.len() as f32 * 7.0;
+            let cursor_y = y + 3.0 + num_lines * line_h;
+            if cursor_x < x + w - 4.0 && cursor_y < y + h - 2.0 {
+                self.add_rect(cursor_x, cursor_y, 1.5, line_h - 2.0, [0.8, 0.8, 0.8, 1.0]);
+            }
+        }
     }
 
     pub fn group(&mut self, title: &str, x: f32, y: f32, w: f32, h: f32, f: impl FnOnce(&mut Self)) {
@@ -561,6 +664,7 @@ impl Gui {
 
         self.text_atlas.trim();
 
+        self.was_focused = self.focused;
         self.mouse_pressed = false;
         self.mouse_released = false;
 

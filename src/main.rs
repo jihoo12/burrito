@@ -6,6 +6,7 @@ use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
+    keyboard::{Key, NamedKey},
     window::{Window, WindowId},
 };
 
@@ -21,6 +22,7 @@ struct Handler {
     wave_speed: f32,
     show_grid: bool,
     mode_2d: bool,
+    text_area_content: String,
 }
 
 fn build_demo_data() -> plot::PlotData {
@@ -149,6 +151,7 @@ impl ApplicationHandler for Handler {
             wave_speed,
             show_grid,
             mode_2d,
+            text_area_content,
             plot_data: _,
         } = self;
 
@@ -202,6 +205,20 @@ impl ApplicationHandler for Handler {
                     app.camera.on_scroll(dy);
                 }
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(ref mut gui) = app.gui {
+                    if event.state == ElementState::Pressed {
+                        let c = match &event.logical_key {
+                            Key::Character(s) => s.chars().next(),
+                            _ => None,
+                        };
+                        let backspace = matches!(&event.logical_key, Key::Named(NamedKey::Backspace));
+                        let delete = matches!(&event.logical_key, Key::Named(NamedKey::Delete));
+                        let enter = matches!(&event.logical_key, Key::Named(NamedKey::Enter));
+                        gui.key_event(c, backspace, delete, enter);
+                    }
+                }
+            }
             WindowEvent::RedrawRequested => {
                 app.update();
 
@@ -227,7 +244,7 @@ impl ApplicationHandler for Handler {
                     if *show_gui_demo {
                         let demo_x = 12.0;
                         let demo_y = 232.0;
-                        gui.group("Demo Widgets", demo_x, demo_y, 220.0, 160.0, |g| {
+                        gui.group("Demo Widgets", demo_x, demo_y, 220.0, 260.0, |g| {
                             g.label("Button demo:", demo_x + 4.0, demo_y + 28.0, [0.7, 0.7, 0.7, 1.0]);
                             if g.button("Click me!", demo_x + 4.0, demo_y + 46.0, 120.0, 24.0) {
                                 println!("Button clicked!");
@@ -236,6 +253,8 @@ impl ApplicationHandler for Handler {
                             g.checkbox("Check me", demo_x + 4.0, demo_y + 82.0, &mut demo_checked);
                             let mut demo_val = 0.5;
                             g.slider("Demo", demo_x + 4.0, demo_y + 110.0, 160.0, &mut demo_val, 0.0, 1.0);
+                            g.label("Text area:", demo_x + 4.0, demo_y + 140.0, [0.7, 0.7, 0.7, 1.0]);
+                            g.text_area(demo_x + 4.0, demo_y + 156.0, 200.0, 84.0, text_area_content);
                         });
                     }
                 }
@@ -263,6 +282,7 @@ fn main() {
         wave_speed: 5.0,
         show_grid: true,
         mode_2d: false,
+        text_area_content: String::new(),
     };
     event_loop.run_app(&mut handler).unwrap();
 }
