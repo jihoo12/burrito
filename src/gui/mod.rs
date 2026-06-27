@@ -39,6 +39,10 @@ impl Gui {
         self.ctx.key_event(c, backspace, delete, enter);
     }
 
+    pub fn scroll(&mut self, delta: f32) {
+        self.ctx.scroll(delta);
+    }
+
     // ── Frame lifecycle ──
 
     pub fn begin_frame(&mut self, w: u32, h: u32) {
@@ -65,6 +69,10 @@ impl Gui {
         self.ctx.is_active()
     }
 
+    pub fn is_focused(&self) -> bool {
+        self.ctx.is_focused()
+    }
+
     // ── Render ──
 
     pub fn render(
@@ -79,6 +87,7 @@ impl Gui {
         self.ctx.was_focused = self.ctx.focused;
         self.ctx.mouse_pressed = false;
         self.ctx.mouse_released = false;
+        self.ctx.scroll_delta = 0.0;
 
         Ok(())
     }

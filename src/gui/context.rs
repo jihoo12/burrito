@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct GuiVertex {
@@ -31,6 +33,10 @@ pub(crate) struct DrawText {
     pub(crate) x: f32,
     pub(crate) y: f32,
     pub(crate) color: [f32; 4],
+    pub(crate) clip_left: f32,
+    pub(crate) clip_top: f32,
+    pub(crate) clip_right: f32,
+    pub(crate) clip_bottom: f32,
 }
 
 pub struct GuiContext {
@@ -50,6 +56,8 @@ pub struct GuiContext {
     key_enter: bool,
     key_delete: bool,
 
+    pub(crate) scroll_delta: f32,
+
     id_gen: u64,
     hot: u64,
     pub(crate) active: u64,
@@ -57,6 +65,8 @@ pub struct GuiContext {
     pub(crate) vertices: Vec<GuiVertex>,
     pub(crate) indices: Vec<u32>,
     pub(crate) texts: Vec<DrawText>,
+
+    scroll_offsets: HashMap<u64, f32>,
 }
 
 impl GuiContext {
@@ -75,12 +85,14 @@ impl GuiContext {
             key_backspace: false,
             key_enter: false,
             key_delete: false,
+            scroll_delta: 0.0,
             id_gen: 1,
             hot: 0,
             active: 0,
             vertices: Vec::new(),
             indices: Vec::new(),
             texts: Vec::new(),
+            scroll_offsets: HashMap::new(),
         }
     }
 
@@ -104,6 +116,10 @@ impl GuiContext {
     pub fn resize(&mut self, w: u32, h: u32) {
         self.screen_w = w as f32;
         self.screen_h = h as f32;
+    }
+
+    pub fn scroll(&mut self, delta: f32) {
+        self.scroll_delta += delta;
     }
 
     pub fn key_event(&mut self, c: Option<char>, backspace: bool, delete: bool, enter: bool) {
@@ -185,6 +201,10 @@ impl GuiContext {
                 x,
                 y,
                 color,
+                clip_left: f32::MIN,
+                clip_top: f32::MIN,
+                clip_right: f32::MAX,
+                clip_bottom: f32::MAX,
             });
         }
     }
@@ -307,20 +327,25 @@ impl GuiContext {
             self.active = 0;
         }
 
+        let mut modified = false;
         if self.focused == id {
             for c in self.input_chars.drain(..) {
                 text.push(c);
+                modified = true;
             }
             if self.key_backspace {
                 text.pop();
                 self.key_backspace = false;
+                modified = true;
             }
             if self.key_delete {
                 self.key_delete = false;
+                modified = true;
             }
             if self.key_enter {
                 text.push('\n');
                 self.key_enter = false;
+                modified = true;
             }
         }
 
@@ -338,22 +363,95 @@ impl GuiContext {
         self.add_border(x, y, w, h, bc);
 
         let line_h = 16.0;
-        let mut line_y = y + 3.0;
-        let mut last_line = "";
-        for line in text.lines() {
-            last_line = line;
-            if line_y + line_h > y + h - 2.0 {
+        let char_w = 7.0;
+        let pad_x = 4.0;
+        let pad_y = 3.0;
+        let max_chars = ((w - pad_x * 2.0) / char_w).floor() as usize;
+        let max_chars = max_chars.max(1);
+
+        // Collect raw lines, ensuring at least one empty line
+        let mut raw_lines: Vec<&str> = text.lines().collect();
+        if text.ends_with('\n') {
+            raw_lines.push("");
+        }
+        if raw_lines.is_empty() {
+            raw_lines.push("");
+        }
+
+        // Wrap long lines at character boundaries
+        let mut lines: Vec<String> = Vec::new();
+        for line in raw_lines {
+            let chars: Vec<char> = line.chars().collect();
+            if chars.len() <= max_chars {
+                lines.push(line.to_string());
+            } else {
+                let mut start = 0;
+                while start < chars.len() {
+                    let end = (start + max_chars).min(chars.len());
+                    lines.push(chars[start..end].iter().collect());
+                    start = end;
+                }
+            }
+        }
+
+        // Compute max scroll offset
+        let total_lines = lines.len();
+        let visible_lines = ((h - pad_y * 2.0) / line_h).floor() as usize;
+        let max_scroll = if total_lines > visible_lines {
+            (total_lines - visible_lines) as f32 * line_h
+        } else {
+            0.0
+        };
+
+        // Auto-scroll to bottom when modified while focused
+        if self.focused == id && modified {
+            self.scroll_offsets.insert(id, max_scroll);
+        }
+
+        // Manual scroll with mouse wheel
+        if self.focused == id && over && self.scroll_delta != 0.0 {
+            let off = self.scroll_offsets.get(&id).copied().unwrap_or(0.0);
+            let off = (off - self.scroll_delta).clamp(0.0, max_scroll);
+            self.scroll_offsets.insert(id, off);
+        }
+
+        let scroll_off = self.scroll_offsets.get(&id).copied().unwrap_or(0.0).clamp(0.0, max_scroll);
+        let top_clip = y + pad_y;
+        let bot_clip = y + h - pad_y;
+
+        // Render only visible (non-clipped) lines
+        let mut line_y = y + pad_y - scroll_off;
+        for line in &lines {
+            if line_y + line_h <= top_clip {
+                line_y += line_h;
+                continue;
+            }
+            if line_y >= bot_clip {
                 break;
             }
-            self.add_text(line, x + 4.0, line_y, [0.85, 0.85, 0.85, 1.0]);
+            self.texts.push(DrawText {
+                text: line.clone(),
+                x: x + pad_x,
+                y: line_y,
+                color: [0.85, 0.85, 0.85, 1.0],
+                clip_left: x,
+                clip_top: y,
+                clip_right: x + w,
+                clip_bottom: y + h,
+            });
             line_y += line_h;
         }
 
+        // Cursor at end of text
         if self.focused == id {
-            let num_lines = text.matches('\n').count() as f32;
-            let cursor_x = x + 4.0 + last_line.len() as f32 * 7.0;
-            let cursor_y = y + 3.0 + num_lines * line_h;
-            if cursor_x < x + w - 4.0 && cursor_y < y + h - 2.0 {
+            let last = lines.len().saturating_sub(1);
+            let cursor_line = &lines[last];
+            let cursor_x = x + pad_x + cursor_line.chars().count() as f32 * char_w;
+            let cursor_y = y + pad_y + last as f32 * line_h - scroll_off;
+            if cursor_x < x + w - pad_x
+                && cursor_y >= top_clip
+                && cursor_y + line_h <= bot_clip
+            {
                 self.add_rect(cursor_x, cursor_y, 1.5, line_h - 2.0, [0.8, 0.8, 0.8, 1.0]);
             }
         }
@@ -384,6 +482,10 @@ impl GuiContext {
 
     pub fn is_active(&self) -> bool {
         self.active != 0
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.focused != 0
     }
 
     #[allow(dead_code)]

@@ -4,7 +4,7 @@ mod plot;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{Key, NamedKey},
     window::{Window, WindowId},
@@ -23,6 +23,7 @@ struct Handler {
     show_grid: bool,
     mode_2d: bool,
     text_area_content: String,
+    modifiers: Modifiers,
 }
 
 fn build_demo_data() -> plot::PlotData {
@@ -153,6 +154,7 @@ impl ApplicationHandler for Handler {
             mode_2d,
             text_area_content,
             plot_data: _,
+            modifiers: _,
         } = self;
 
         let Some(state) = state.as_mut() else {
@@ -195,13 +197,20 @@ impl ApplicationHandler for Handler {
                     app.camera.on_cursor_moved(position.x, position.y);
                 }
             }
+            WindowEvent::ModifiersChanged(m) => {
+                self.modifiers = m;
+            }
             WindowEvent::MouseWheel { delta, .. } => {
-                let gui_active = app.gui.as_ref().map_or(false, |g| g.is_active());
-                if !gui_active {
-                    let dy = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y,
-                        MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.01,
-                    };
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.01,
+                };
+                let gui_focused = app.gui.as_ref().map_or(false, |g| g.is_focused());
+                if gui_focused && !self.modifiers.state().control_key() {
+                    if let Some(ref mut gui) = app.gui {
+                        gui.scroll(dy * 16.0);
+                    }
+                } else {
                     app.camera.on_scroll(dy);
                 }
             }
@@ -210,6 +219,7 @@ impl ApplicationHandler for Handler {
                     if event.state == ElementState::Pressed {
                         let c = match &event.logical_key {
                             Key::Character(s) => s.chars().next(),
+                            Key::Named(NamedKey::Space) => Some(' '),
                             _ => None,
                         };
                         let backspace = matches!(&event.logical_key, Key::Named(NamedKey::Backspace));
@@ -283,6 +293,7 @@ fn main() {
         show_grid: true,
         mode_2d: false,
         text_area_content: String::new(),
+        modifiers: Modifiers::default(),
     };
     event_loop.run_app(&mut handler).unwrap();
 }

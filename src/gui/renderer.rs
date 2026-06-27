@@ -246,7 +246,12 @@ impl GuiRenderer {
                     left: t.x,
                     top: t.y,
                     scale: 1.0,
-                    bounds: TextBounds::default(),
+                    bounds: TextBounds {
+                        left: t.clip_left as i32,
+                        top: t.clip_top as i32,
+                        right: t.clip_right as i32,
+                        bottom: t.clip_bottom as i32,
+                    },
                     default_color: GlyphColor::rgba(
                         (t.color[0] * 255.0) as u8,
                         (t.color[1] * 255.0) as u8,
